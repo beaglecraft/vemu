@@ -22,8 +22,11 @@ jobs:
           sudo apt-get install -y qemu-system-misc qemu-system-x86 qemu-user-static qemu-kvm \
             genisoimage
 
-          sudo modprobe kvm
-          sudo chown $(whoami) /dev/kvm
+          # On Blacksmith runners, KVM is built into the microVM kernel rather than shipped
+          # as a loadable module, so `modprobe kvm` reports "Module kvm not found". /dev/kvm
+          # is still present for nested virtualization, so don't let this fail the job.
+          sudo modprobe kvm || true
+          sudo chown "$(whoami)" /dev/kvm
 
           qemu-system-x86_64 --version
 
