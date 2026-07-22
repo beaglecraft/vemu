@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Run experiment
-        run: bin/experiment-qemu
+        run: test/ci-qemu
 
       - name: Print serial log
         run: |
