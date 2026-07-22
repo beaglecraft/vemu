@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -22,8 +22,11 @@ jobs:
           sudo apt-get install -y qemu-system-misc qemu-system-x86 qemu-user-static qemu-kvm \
             genisoimage
 
-          sudo modprobe kvm
-          sudo chown $(whoami) /dev/kvm
+          # On Blacksmith runners, KVM is built into the microVM kernel rather than shipped
+          # as a loadable module, so `modprobe kvm` reports "Module kvm not found". /dev/kvm
+          # is still present for nested virtualization, so don't let this fail the job.
+          sudo modprobe kvm || true
+          sudo chown "$(whoami)" /dev/kvm
 
           qemu-system-x86_64 --version
 
@@ -56,8 +59,11 @@ jobs:
           set -eux
           mkdir -p ~/.vemu/base-images
           if [ ! -f ~/.vemu/base-images/ubuntu-amd64.img ]; then
-            # time curl -fsSL -o ~/.vemu/base-images/ubuntu-amd64.img https://cloud-images.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-amd64.img
-            time curl -fsSL -o ~/.vemu/base-images/ubuntu-amd64.img https://mirrorservice.org/sites/cloud-images.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-amd64.img
+            # The mirrorservice.org mirror prunes the .img files for archived releases
+            # (release-20250704 now 404s there). cloud-images.ubuntu.com redirects archived
+            # releases to cloud-images-archive.ubuntu.com, which `curl -L` follows, so fetch
+            # from the canonical host instead.
+            time curl -fsSL -o ~/.vemu/base-images/ubuntu-amd64.img https://cloud-images.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-amd64.img
           fi
 
       - name: Run experiment
