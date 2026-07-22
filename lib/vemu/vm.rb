@@ -6,11 +6,14 @@ module Vemu
     attr_accessor :arch
     attr_accessor :disk
     attr_accessor :cloud_init
+    attr_accessor :distro
+    attr_accessor :vsock_cid
 
+    attr_accessor :host_info
     attr_accessor :network_cards
     attr_accessor :guestagent_enabled
 
-    def initialize(name, context: Context.default, cloud_init: nil)
+    def initialize(name, context: Context.default, cloud_init: nil, distro: 'ubuntu')
       @name = name
       @arch = 'amd64'
       @memory = '3072'
@@ -18,6 +21,9 @@ module Vemu
       @threads_per_core = 1
       @disk = '21474836480'
       @guestagent_enabled = true
+      @distro = distro
+      @vsock_cid = nil
+      @host_info = HostInfo.new
 
       @context = context
       host_name = "vemu-#{name}"
@@ -52,7 +58,7 @@ module Vemu
     end
 
     def diffdisk_create!
-      base_image_path = @context.base_image_path(name: 'ubuntu', arch:)
+      base_image_path = @context.base_image_path(name: @distro, arch:)
       FileUtils.rm(diffdisk_path) if diffdisk_present?
 
       `qemu-img create -f qcow2 -F qcow2 -b '#{base_image_path}' '#{diffdisk_path}' #{@disk}`
@@ -65,16 +71,19 @@ module Vemu
     def prepare_vm_files
       FileUtils.mkdir_p(@vm_path)
 
-      cloud_init_img_create! unless cloud_init_img_present?
+      # XXX: always recreate the cloud init image. It has caused a few headaches already.
+      # cloud_init_img_create! unless cloud_init_img_present?
+      cloud_init_img_create!
 
       diffdisk_create! unless diffdisk_present?
     end
 
+    def qemu_system_bin = @host_info.qemu_system_bin(@arch)
+
     def vm_start_exec
-      base_cmd = '/usr/bin/qemu-system-x86_64'
       cmd_args = qemu_cmd_arguments
 
-      exec({}, base_cmd, *cmd_args, {
+      exec({}, qemu_system_bin, *cmd_args, {
         chdir: @vm_path,
       })
     end
@@ -82,8 +91,7 @@ module Vemu
     def vm_start
       prepare_vm_files
 
-      base_cmd = '/usr/bin/qemu-system-x86_64'
-      full_command = "#{base_cmd} \\\n"
+      full_command = "#{qemu_system_bin} \\\n"
 
       qemu_cmd_arguments.each_slice(2) do |lines|
         full_command += "\t#{lines.join(' ')} \\\n"
@@ -104,32 +112,82 @@ module Vemu
 
       machine_args = [
         "-m", @memory,
-        "-cpu", "host",
-        "-machine", "q35,accel=kvm",
         "-smp", "#{@cpus},sockets=1,cores=#{@cpus},threads=#{@threads_per_core}",
-        "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd,",
-        "-boot", "order=c,splash-time=0,menu=on,",
       ]
+
+      if @arch == 'amd64'
+        machine_args += [
+          "-machine", "q35,accel=kvm,pflash0=uefi_code",
+          "-cpu", "host",
+
+          "-blockdev", "driver=file,filename=#{@host_info.ovmf_code_path},node-name=uefi_code,read-only=on",
+
+          # "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd",
+          # "-boot", "order=c,splash-time=0,menu=on",
+          "-boot", "menu=on",
+        ]
+      elsif @arch == 'arm64'
+        # cp /usr/share/AAVMF/AAVMF_VARS.fd /home/masterapp/.vemu/vms/early/kvm_vars.fd
+
+        raise "must copy the /usr/share/AAVMF/AAVMF_VARS.fd file"
+
+        machine_args += [
+          "-machine", "virt",
+          "-accel", "tcg,thread=multi",
+          "-cpu", "cortex-a57", # "max",
+          # "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+
+          "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/AAVMF/AAVMF_CODE.fd",
+          "-drive", "if=pflash,format=raw,unit=1,file=/home/masterapp/.vemu/vms/early/kvm_vars.fd",
+        ]
+      end
 
       ## Storage
 
-      # docs on the -drive option:
-      #   https://www.heiko-sieger.info/qemu-system-x86_64-drive-options/
-      #   https://qemu.weilnetz.de/doc/6.0/system/invocation.html
-      #
-      #   It's more user-friendly than the newer -blockdev + -device combination, but the latter is recommended for scripting due to better stability guarantees.
+      # # docs on the -drive option:
+      # #   https://www.heiko-sieger.info/qemu-system-x86_64-drive-options/
+      # #   https://qemu.weilnetz.de/doc/6.0/system/invocation.html
+      # #
+      # #   It's more user-friendly than the newer -blockdev + -device combination, but the latter is recommended for scripting due to better stability guarantees.
+      # storage_args = [
+      #   "-drive", "file=#{diffdisk_path},if=virtio,discard=on,cache=unsafe"
+      #   # -blockdev driver=raw,node-name=drive0,file.driver=file,file.filename=~/lime/ubu-virt/diffdisk,discard=unmap,cache.direct=off,cache.no-flush=on
+      #   # -device virtio-blk-pci,drive=drive0
+      # ]
+
+      # Talking to AI: https://gemini.google.com/app/81067894fa87ef58
+      # The `-drive` option above is considered legacy and/or not as flexible as the one below.
+
+      # storage_args = [
+      #   "-blockdev", "driver=qcow2,node-name=disk0,discard=unmap,cache.direct=on,cache.no-flush=off,file.driver=file,file.filename=#{diffdisk_path}",
+      #   "-device", "virtio-blk-pci,drive=disk0"
+      # ]
+
       storage_args = [
-        "-drive", "file=#{diffdisk_path},if=virtio,discard=on,cache=unsafe"
-        # -blockdev driver=raw,node-name=drive0,file.driver=file,file.filename=~/lime/ubu-virt/diffdisk,discard=unmap,cache.direct=off,cache.no-flush=on
-        # -device virtio-blk-pci,drive=drive0
+        # 1. Create the SCSI Controller device - this controller is also used by cloudinit_args below.
+        "-device", "virtio-scsi-pci,id=scsi_ctrl0",
+
+        # 2. Define the block backend with caching and discard properties
+        "-blockdev", "driver=qcow2,node-name=disk0_backend,discard=unmap,cache.direct=on,cache.no-flush=off,file.driver=file,file.filename=#{diffdisk_path}",
+        # 3. Attach a SCSI hard drive frontend to the controller and link it to the backend
+        "-device", "scsi-hd,bus=scsi_ctrl0.0,scsi-id=0,drive=disk0_backend,id=disk0,bootindex=0"
       ]
 
       # CloudInit disk
 
+      # cloudinit_args = [
+      #   "-drive", "id=cdrom0,if=none,format=raw,readonly=on,file=#{cloud_init_img_path}",
+      #   "-device", "virtio-scsi-pci,id=scsi0",
+      #   "-device", "scsi-cd,bus=scsi0.0,drive=cdrom0",
+      # ]
       cloudinit_args = [
-        "-drive", "id=cdrom0,if=none,format=raw,readonly=on,file=#{cloud_init_img_path}",
-        "-device", "virtio-scsi-pci,id=scsi0",
-        "-device", "scsi-cd,bus=scsi0.0,drive=cdrom0",
+
+        "-blockdev", "driver=file,filename=#{cloud_init_img_path},node-name=cdrom0,read-only=on",
+        "-device", "scsi-cd,bus=scsi_ctrl0.0,scsi-id=1,drive=cdrom0,id=cdrom_dev0"
+
+        # 3. CD-ROM Backend & Frontend (Targeting the SAME controller, different SCSI ID)
+        # "-drive", "id=cdrom0,if=none,format=raw,readonly=on,file=#{cloud_init_img_path}",
+        # "-device", "scsi-cd,bus=scsi_ctrl0.0,scsi-id=1,drive=cdrom0,id=cdrom_dev0"
       ]
 
       ## Networking
@@ -163,12 +221,20 @@ module Vemu
         ]
       end
 
+      extra_args = []
+
+      if @vsock_cid
+        extra_args += [
+          "-device", "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=#{@vsock_cid}",
+        ]
+      end
+
       other_args = [
         "-device", "virtio-rng-pci",
         "-display", "none",
-        "-device", "virtio-vga",
-        "-device", "virtio-keyboard-pci",
-        "-device", "virtio-mouse-pci",
+        # "-device", "virtio-gpu-pci", # "-device", "virtio-vga",
+        # "-device", "virtio-keyboard-pci",
+        # "-device", "virtio-mouse-pci",
         "-device", "qemu-xhci,id=usb-bus",
         "-parallel", "none",
 
@@ -190,7 +256,7 @@ module Vemu
         "-pidfile", qemu_pid_path
       ]
 
-      (machine_args + storage_args + cloudinit_args + network_args + guestagent_args + other_args).map(&:to_s)
+      (machine_args + storage_args + cloudinit_args + network_args + guestagent_args + extra_args + other_args).map(&:to_s)
     end
 
     def add_tap_netdev(net_device, mac:, host_tap:)

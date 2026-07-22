@@ -7,6 +7,7 @@ module Vemu
     attr_accessor :users
     attr_accessor :host_name
     attr_accessor :instance_id
+    attr_accessor :apt_mirror
 
     def initialize(host_name:, instance_id: nil, context: Context.default)
       @timezone = 'Etc/UTC'
@@ -15,6 +16,12 @@ module Vemu
       @instance_id = instance_id || host_name
       @host_name = host_name
       @included_files = []
+      @apt_mirror = nil
+      @context = context
+    end
+
+    def set_apt_mirror(primary:, security: nil)
+      @apt_mirror = { primary:, security: }
     end
 
     def add_user(user_name, sudoer: false, ssh_keys: nil, uid: nil)
@@ -81,16 +88,33 @@ module Vemu
           devices: ['/'],
         },
 
+        swap: {
+          filename: '/swapfile',
+          size: '4G',
+          maxsize: '4G',
+        },
+
+        #runcmd: [
+          # fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          # "echo '/swapfile none swap sw 0 0' >> /etc/fstab",
+        #],
+
         # packages
         # package_update: true,
         # packages: [
-        #   'neovim',
-        #   'curl',
-        #   'openssl',
-        #   'libyaml-0-2',
-        #   'zlib1g',
-        #   'libffi8',
-        #   'libgmp10'
+        #   # Debian:
+        #
+        #   'tmux',
+        #
+        #   # Ubuntu:
+        #
+        #   # 'neovim',
+        #   # 'curl',
+        #   # 'openssl',
+        #   # 'libyaml-0-2',
+        #   # 'zlib1g',
+        #   # 'libffi8',
+        #   # 'libgmp10'
         # ],
 
         # mounts:
@@ -126,6 +150,23 @@ module Vemu
           uptime: $uptime
         INFO
       }
+
+      if @apt_mirror
+        ci_data[:apt] = {
+          primary: [
+            {
+              arches: ['default'],
+              uri: @apt_mirror[:primary]
+            }
+          ],
+          security: [
+            {
+              arches: ['default'],
+              uri: @apt_mirror[:security]
+            }
+          ],
+        }
+      end
 
       yaml_data = Psych.dump(ci_data, stringify_names: true)
 
