@@ -71,6 +71,10 @@ jobs:
             #   time curl -fsSL -o ~/.vemu/base-images/ubuntu-amd64.img https://mirrorservice.org/sites/cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
           fi
 
+          image_path="$(bundle exec ruby -Ilib -rvemu -e 'puts Vemu::Context.default.base_image_path(name: :ubuntu)')"
+          echo "Will symlink ubuntu-amd64.img to '${image_path}'"
+          ln -sfn ubuntu-amd64.img "$image_path"
+
       - name: Run experiment
         run: test/ci-qemu
 
