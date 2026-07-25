@@ -10,11 +10,55 @@ require 'open3'
 
 vm = Vemu::VM.new('early')
 vm.cpus = 1
-vm.memory = '512'
+vm.memory = '768'
 vm.cloud_init.add_user(:lime, sudoer: true, ssh_keys: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJu+2F3cgwei6vVQUsBjv5P+Na8mtLSfRXelrpUXphbm')
 # vm.add_tap_netdev('eth0', mac: '52:55:55:c2:d9:ac', host_tap: 'tap0')
 
 vm.add_user_netdev('eth0', mac: '52:55:55:c2:d9:af')
+vm.vsock_cid = 10015050
+
+vm.cloud_init.append_user_data_hook do |ci_data|
+  ci_data[:write_files] ||= []
+  ci_data[:runcmd] ||= []
+
+  ci_data[:runcmd] += [
+    ['systemctl', 'daemon-reload'],
+    ['systemctl', 'enable', '--now', 'sshd-vsock.socket'],
+  ]
+
+  ci_data[:write_files] << {
+    path: '/etc/systemd/system/sshd-vsock.socket',
+    permissions: '0644',
+    content: <<~SYSTEMD_UNIT
+      [Unit]
+      Description=OpenSSH over AF_VSOCK
+
+      [Socket]
+      ListenStream=vsock::22
+      Accept=yes
+
+      [Install]
+      WantedBy=sockets.target
+    SYSTEMD_UNIT
+  }
+
+  ci_data[:write_files] << {
+    path: '/etc/systemd/system/sshd-vsock@.service',
+    permissions: '0644',
+    content: <<~SYSTEMD_UNIT
+      [Unit]
+      Description=OpenSSH per-connection server over AF_VSOCK
+
+      [Service]
+      ExecStart=-/usr/sbin/sshd -i
+      StandardInput=socket
+
+      RuntimeDirectory=sshd
+      RuntimeDirectoryMode=0755
+      RuntimeDirectoryPreserve=yes
+    SYSTEMD_UNIT
+  }
+end
 
 vm.reset_machine!
 vm.prepare_vm_files
@@ -84,5 +128,3 @@ sleep(2)
 
 puts "Done. read_messages:"
 puts(read_messages)
-
-
