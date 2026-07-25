@@ -31,6 +31,16 @@ jobs:
 
           qemu-system-x86_64 --version
 
+      - name: Install vhost-device-vsock
+        run: |
+          # The Blacksmith runner kernel is built without CONFIG_VHOST_VSOCK, so the in-kernel
+          # /dev/vhost-vsock backend that QEMU's `vhost-vsock-pci` device needs isn't available.
+          # Install the userspace rust-vmm vhost-user backend instead: QEMU's `vhost-user-vsock`
+          # device talks to this daemon over a Unix socket, so no kernel module is required.
+          cargo install vhost-device-vsock --version 0.3.0 --locked
+          echo "${HOME}/.cargo/bin" >> "$GITHUB_PATH"
+          "${HOME}/.cargo/bin/vhost-device-vsock" --version
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
