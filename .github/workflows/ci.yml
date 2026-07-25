@@ -60,7 +60,7 @@ jobs:
           curl -fsSL -o guest-support/localruby.tzst http://xb1-p.us-east-1.linodeobjects.com/localruby/localruby.tzst
 
       - name: Cache base VM image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.vemu/base-images
           key: vemu-1
