@@ -16,6 +16,7 @@ vm.cloud_init.add_user(:lime, sudoer: true, ssh_keys: 'ssh-ed25519 AAAAC3NzaC1lZ
 
 vm.add_user_netdev('eth0', mac: '52:55:55:c2:d9:af')
 vm.vsock_cid = 10015050
+vm.vsock_mode = :user
 
 vm.cloud_init.append_user_data_hook do |ci_data|
   ci_data[:write_files] ||= []

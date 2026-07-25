@@ -9,6 +9,7 @@ module Vemu
     attr_accessor :distro
     attr_accessor :vsock_cid
     attr_accessor :offline_mode
+    attr_accessor :vsock_mode
 
     attr_accessor :host_info
     attr_accessor :network_cards
@@ -24,6 +25,7 @@ module Vemu
       @guestagent_enabled = true
       @distro = distro
       @vsock_cid = nil
+      @vsock_mode = :host
       @offline_mode = false
       @host_info = HostInfo.new
 
@@ -202,7 +204,7 @@ module Vemu
 
       if @arch == 'amd64'
         machine_args += [
-          "-machine", "q35,accel=kvm,pflash0=uefi_code",
+          "-machine", "q35,accel=kvm,pflash0=uefi_code#{@vsock_mode == :user ? ',memory-backend=mem0' : nil}",
           "-cpu", "host",
 
           "-blockdev", "driver=file,filename=#{@host_info.ovmf_code_path},node-name=uefi_code,read-only=on",
@@ -321,9 +323,20 @@ module Vemu
       extra_args = []
 
       if @vsock_cid
-        extra_args += [
-          "-device", "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=#{@vsock_cid}",
-        ]
+        if @vsock_mode == :host
+          extra_args += [
+            "-device", "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=#{@vsock_cid}",
+          ]
+        elsif @vsock_mode == :user
+          # vhost-device-vsock --vm guest-cid=24,socket=/tmp/vhost24.sock,uds-path=/tmp/vm24.sock
+          extra_args += [
+            "-chardev", "socket,id=vsock-user,path=/tmp/vhost#{@vsock_cid}.sock",
+            "-device", "vhost-user-vsock-pci,chardev=vsock-user",
+            "-object", "memory-backend-memfd,id=mem0,size=#{@memory}M,share=on",
+          ]
+        else
+          raise "vsock_cid specified but vsock_mode has invalid value: '#{@vsock_mode}'"
+        end
       end
 
       other_args = [
