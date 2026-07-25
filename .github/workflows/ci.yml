@@ -86,7 +86,12 @@ jobs:
           ln -sfn ubuntu-amd64.img "$image_path"
 
       - name: Run experiment
-        run: test/ci-qemu
+        run: |
+          vhost-device-vsock --vm guest-cid=10015050,socket=/tmp/vhost10015050.sock,uds-path=/tmp/vm10015050.sock &
+
+          sleep 1
+
+          test/ci-qemu
 
       - name: Print serial log
         run: |
