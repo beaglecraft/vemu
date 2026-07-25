@@ -7,7 +7,7 @@ dnf install -y epel-release
 
 Debian dependencies:
 
-apt-get install -y --no-install-recommends ovmf uml-utilities genisoimage qemu-utils
+apt-get install -y --no-install-recommends ovmf uml-utilities genisoimage qemu-utils libguestfs-tools
 apt-get install -y --no-install-recommends qemu-system-x86 qemu-kvm
 
 # to run arm64 images:

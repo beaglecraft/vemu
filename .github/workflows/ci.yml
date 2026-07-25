@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y qemu-system-misc qemu-system-x86 qemu-user-static qemu-kvm \
-            genisoimage
+            genisoimage libguestfs-tools
 
           # On Blacksmith runners, KVM is built into the microVM kernel rather than shipped
           # as a loadable module, so `modprobe kvm` reports "Module kvm not found". /dev/kvm

@@ -9,6 +9,11 @@ module Vemu
     attr_accessor :instance_id
     attr_accessor :apt_mirror
 
+    attr_accessor :user_data_hooks
+    attr_accessor :meta_data_hooks
+    attr_accessor :network_config_hooks
+    attr_accessor :use_network_config
+
     def initialize(host_name:, instance_id: nil, context: Context.default)
       @timezone = 'Etc/UTC'
       @next_user_uid = 1001
@@ -17,7 +22,12 @@ module Vemu
       @host_name = host_name
       @included_files = []
       @apt_mirror = nil
+      @use_network_config = false
       @context = context
+
+      @user_data_hooks = []
+      @meta_data_hooks = []
+      @network_config_hooks = []
     end
 
     def set_apt_mirror(primary:, security: nil)
@@ -32,7 +42,7 @@ module Vemu
 
       {
         name: user_name.to_s,
-        uid: uid.to_s,
+        uid: uid,
         homedir: "/home/#{user_name}",
         shell: '/bin/bash',
         lock_passwd: true,
@@ -58,11 +68,14 @@ module Vemu
 
       File.write(File.join(ci_path, 'user-data'), user_data)
       File.write(File.join(ci_path, 'meta-data'), meta_data)
+      File.write(File.join(ci_path, 'network-config'), network_config) if @use_network_config
 
       all_files = [
         "#{ci_path}/user-data",
         "#{ci_path}/meta-data",
-      ] + @included_files
+        @use_network_config ? "#{ci_path}/network-config" : nil,
+      ].compact + @included_files
+
       command = "genisoimage -r -J -V cidata -input-charset utf-8 -o #{output_path} #{all_files.join(' ')}"
       `#{command}`
 
@@ -76,6 +89,23 @@ module Vemu
         'instance-id' => @instance_id,
         'local-hostname' => @host_name,
       }
+
+      @meta_data_hooks.each do |blk|
+        blk.call(data)
+      end
+
+      yaml_data = Psych.dump(data, stringify_names: true)
+      "#{yaml_data.split("\n")[1..].join("\n")}\n"
+    end
+
+    def network_config
+      data = {
+        version: 2
+      }
+
+      @network_config_hooks.each do |blk|
+        blk.call(data)
+      end
 
       yaml_data = Psych.dump(data, stringify_names: true)
       "#{yaml_data.split("\n")[1..].join("\n")}\n"
@@ -98,49 +128,12 @@ module Vemu
           # fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
           # "echo '/swapfile none swap sw 0 0' >> /etc/fstab",
         #],
-
-        # packages
-        # package_update: true,
-        # packages: [
-        #   # Debian:
-        #
-        #   'tmux',
-        #
-        #   # Ubuntu:
-        #
-        #   # 'neovim',
-        #   # 'curl',
-        #   # 'openssl',
-        #   # 'libyaml-0-2',
-        #   # 'zlib1g',
-        #   # 'libffi8',
-        #   # 'libgmp10'
-        # ],
-
-        # mounts:
         timezone: @timezone,
 
         users:,
 
-        write_files: [
-          {
-            content: <<~BASH,
-              #!/bin/sh
-              set -eux
-              LIMA_CIDATA_MNT="/mnt/lima-cidata"
-              LIMA_CIDATA_DEV="/dev/disk/by-label/cidata"
-              mkdir -p -m 700 "${LIMA_CIDATA_MNT}"
-              mount -o ro,mode=0700,dmode=0700,overriderockperm,exec,uid=0 "${LIMA_CIDATA_DEV}" "${LIMA_CIDATA_MNT}"
-              export LIMA_CIDATA_MNT
-              cd $LIMA_CIDATA_MNT
-              # exec ga_init.sh
-              exec "${LIMA_CIDATA_MNT}"/ga_init.sh
-            BASH
-            owner: 'root:root',
-            path: '/var/lib/cloud/scripts/per-boot/00-vemu.boot.sh',
-            permissions: '0755'
-          }
-        ],
+        write_files: [],
+        runcmd: [],
 
         final_message: <<~INFO,
           cloud-init has finished
@@ -168,9 +161,22 @@ module Vemu
         }
       end
 
+      @user_data_hooks.each do |blk|
+        blk.call(ci_data)
+      end
+
       yaml_data = Psych.dump(ci_data, stringify_names: true)
 
       "\#cloud-config\n#{yaml_data.split("\n")[1..].join("\n")}\n"
     end
+
+    def prepend_user_data_hook(&blk) = @user_data_hooks.unshift(blk)
+    def append_user_data_hook(&blk) = @user_data_hooks << blk
+
+    def prepend_meta_data_hook(&blk) = @meta_data_hooks.unshift(blk)
+    def append_meta_data_hook(&blk) = @meta_data_hooks << blk
+
+    def prepend_network_config_hook(&blk) = @network_config_hooks.unshift(blk)
+    def append_network_config_hook(&blk) = @network_config_hooks << blk
   end
 end

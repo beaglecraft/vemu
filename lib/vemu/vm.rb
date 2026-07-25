@@ -8,6 +8,7 @@ module Vemu
     attr_accessor :cloud_init
     attr_accessor :distro
     attr_accessor :vsock_cid
+    attr_accessor :offline_mode
 
     attr_accessor :host_info
     attr_accessor :network_cards
@@ -23,11 +24,21 @@ module Vemu
       @guestagent_enabled = true
       @distro = distro
       @vsock_cid = nil
+      @offline_mode = false
       @host_info = HostInfo.new
 
       @context = context
       host_name = "vemu-#{name}"
       @cloud_init = cloud_init || CloudInit.new(context:, host_name:)
+      @cloud_init_user_data_hooks = nil
+      @cloud_init.prepend_user_data_hook do |ci_data|
+        @cloud_init_user_data_hooks.each { |fun| fun.call(ci_data) }
+      end
+
+      @cloud_init_network_config_hooks = nil
+      @cloud_init.prepend_network_config_hook do |data|
+        @cloud_init_network_config_hooks.each { |fun| fun.call(data) }
+      end
 
       # The path where we store all temporary files and stuff for this particular VM
       @vm_path = context.path_for_vm(name)
@@ -40,6 +51,77 @@ module Vemu
       if @guestagent_enabled
         guest_support_path = File.expand_path(File.join(__dir__, '../../guest-support'))
         cloud_init.include_file(guest_support_path)
+
+        # In offline mode, we tell OS not to expect any network config. Without this,
+        # the machine could hang during boot in something like:
+        #   [  OK  ] Reached target network-pre.target - Preparation for Network.
+        #            Starting systemd-networkd.service - Network Configuration...
+        #   [  OK  ] Started systemd-networkd.service - Network Configuration.
+        #   [  OK  ] Reached target network.target - Network.
+        #            Starting systemd-networkd-wait-onl…ait for Network to be Configured...
+        if @offline_mode
+          @cloud_init_network_config_hooks << proc do |conf|
+            conf[:ethernets] = {}
+          end
+          # @cloud_init_user_data_hooks << proc do |ci_data|
+          #   # intentionally overwrite the 'network' key.
+          #   ci_data[:network] = { config: 'disabled' }
+          #
+          #   if %w[ubuntu debian].include?(@distro)
+          #     ci_data[:runcmd].unshift('systemctl mask systemd-networkd-wait-online.service')
+          #     ci_data[:write_files] << {
+          #       path: '/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg',
+          #       permissions: '0644',
+          #       content: Psych.dump({ network: { config: 'disabled' } }, stringify_names: true)
+          #     }
+          #   end
+          # end
+        end
+
+        @cloud_init_user_data_hooks << proc do |ci_data|
+          ci_data[:write_files] ||= []
+          ci_data[:write_files] << {
+            owner: 'root:root',
+            path: '/etc/systemd/system/vemu-guest-agent.service',
+            permissions: '0644',
+            content: <<~SYSTEMD_UNIT
+              [Unit]
+              Description=VEMU Guest Agent
+              After=network.target
+
+              [Service]
+              Type=simple
+              WorkingDirectory=/opt/vemu-init
+              ExecStart=/opt/vemu-init/localruby/bin/ruby /opt/vemu-init/ga_init.rb
+              Restart=always
+              RestartSec=5
+              User=root
+              Group=root
+
+              [Install]
+              WantedBy=multi-user.target
+            SYSTEMD_UNIT
+          }
+
+          ci_data[:write_files] << {
+            owner: 'root:root',
+            path: '/var/lib/cloud/scripts/per-boot/00-vemu.boot.sh',
+            permissions: '0755',
+            content: <<~BASH,
+              #!/bin/sh
+              set -eux
+              VEMU_CIDATA_MNT="/mnt/lima-cidata"
+              VEMU_CIDATA_DEV="/dev/disk/by-label/cidata"
+              mkdir -p -m 700 "${VEMU_CIDATA_MNT}"
+              mount -o ro,mode=0700,dmode=0700,overriderockperm,exec,uid=0 "${VEMU_CIDATA_DEV}" "${VEMU_CIDATA_MNT}"
+              export VEMU_CIDATA_MNT
+              cd $VEMU_CIDATA_MNT
+              # exec ga_init.sh
+              exec "${VEMU_CIDATA_MNT}"/ga_init.sh
+            BASH
+          }
+
+        end
       end
 
       cloud_init.create_isodisk(output_path: File.join(@vm_path, 'cidata.iso'))
@@ -69,6 +151,9 @@ module Vemu
     end
 
     def prepare_vm_files
+      @cloud_init_user_data_hooks = []
+      @cloud_init_network_config_hooks = []
+
       FileUtils.mkdir_p(@vm_path)
 
       # XXX: always recreate the cloud init image. It has caused a few headaches already.
@@ -194,6 +279,18 @@ module Vemu
       # https://wiki.qemu.org/Documentation/Networking
 
       network_args = []
+
+      # If no network config is provided, qemu will provide a network implicitly.
+      # We don't want that, Instead we want no network/internet connection.
+      if @offline_mode && !@network_cards.empty?
+        raise "Invalid: offline mode was requested but network card list is non-empty. Aborting."
+      end
+      if @network_cards.empty? || @offline_mode
+        network_args += [
+          "-nic", "none"
+        ]
+      end
+
       @network_cards.each do |card|
         if card[:mode] == 'tap'
           network_args += [
@@ -303,6 +400,10 @@ module Vemu
     #
     #   lines.join("\n")
     # end
+
+    def offline_mode!
+      @offline_mode = true
+    end
 
     def cloud_init_img_present? = File.file?(cloud_init_img_path)
     def diffdisk_present? = File.file?(diffdisk_path)
