@@ -1,3 +1,14 @@
+PATH
+  remote: .
+  specs:
+    vemu (0.1.0.pre.alpha1)
+      bcrypt_pbkdf (~> 1.1)
+      ed25519 (~> 1.4)
+      json (~> 2.10)
+      logger (~> 1.7)
+      net-ssh (~> 7.3)
+      psych (~> 5.2)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -53,6 +64,7 @@ DEPENDENCIES
   net-ssh
   os
   psych
+  vemu!
 
 BUNDLED WITH
   4.0.17
