@@ -131,10 +131,9 @@ puts(read_messages)
 
 puts "Now running SSH check."
 
-output = Net::SSH.start(
-  '127.0.0.1', 'lime',
+output = Net::SSH.start('127.0.0.1', 'lime',
   port: 24000,
-  keys: [File.expand_path "~/.ssh/id_ed25519_vemu_temp"],
+  keys: [File.expand_path("~/.ssh/id_ed25519_vemu_temp")],
   non_interactive: true
 ) do |ssh|
   ssh.exec!("lsb_release -a")
