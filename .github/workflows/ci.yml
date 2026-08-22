@@ -47,6 +47,13 @@ jobs:
           # device talks to this daemon over a Unix socket, so no kernel module is required.
           cargo install vhost-device-vsock --version 0.3.0 --locked
 
+      - name: Save vhost-device-vsock cache
+        if: steps.cache-vhost-device-vsock.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cargo/bin/vhost-device-vsock
+          key: ${{ steps.cache-vhost-device-vsock.outputs.cache-primary-key }}
+
       - name: Set up vhost-device-vsock
         run: |
           echo "${HOME}/.cargo/bin" >> "$GITHUB_PATH"
