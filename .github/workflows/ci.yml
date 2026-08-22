@@ -87,8 +87,17 @@ jobs:
 
       - name: Run experiment
         run: |
+          # This must be running in order for qemu below to be able to boot
           vhost-device-vsock --vm guest-cid=10015050,socket=/tmp/vhost10015050.sock,uds-path=/tmp/vm10015050.sock &
 
+          # The order of this one is not important
+          ./vendor/vsock-bridge/user-vsock.rb --bind 127.0.0.1:24000 --uds-path /tmp/vm24.sock >/dev/null 2>&1 &
+
+          # Create a throwaway SSH key
+          mkdir -p ~/.ssh
+          ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_vemu_temp -N "" -q
+
+          # very hacky way of "ensuring" the socket is in place.
           sleep 1
 
           test/ci-qemu
