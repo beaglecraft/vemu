@@ -5,7 +5,7 @@ $:.unshift(File.expand_path(File.join(__dir__, '../lib')))
 require 'vemu'
 # require 'debug'
 
-require 'net-ssh'
+require 'net/ssh'
 require 'open3'
 # puts OS.report
 
