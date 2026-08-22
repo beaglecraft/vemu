@@ -109,7 +109,7 @@ jobs:
           vhost-device-vsock --vm guest-cid=10015050,socket=/tmp/vhost10015050.sock,uds-path=/tmp/vm10015050.sock &
 
           # The order of this one is not important
-          ./vendor/vsock-bridge/user-vsock.rb --bind 127.0.0.1:24000 --uds-path /tmp/vm24.sock >/dev/null 2>&1 &
+          ./vendor/vsock-bridge/user-vsock.rb --bind 127.0.0.1:15050 --uds-path /tmp/vm10015050.sock >/dev/null 2>&1 &
 
           # Create a throwaway SSH key
           mkdir -p ~/.ssh
