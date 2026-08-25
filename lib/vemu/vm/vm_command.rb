@@ -126,9 +126,8 @@ module Vemu
       if @guestagent_enabled
         guestagent_args += [
           # Guest Agent port
-          "-chardev", "socket,path=#{ga_socket_path},server=on,wait=off,id=qga0",
-          "-device", "virtio-serial",
-          "-device", "virtserialport,chardev=qga0,name=io.vemu.guest_agent.0",
+          "-chardev", "socket,path=#{ga_socket_path},server=on,wait=off,id=vemu-ga",
+          "-device", "virtserialport,bus=virtio-serial0.0,chardev=vemu-ga,name=io.vemu.guest_agent.0",
         ]
       end
 
@@ -151,6 +150,19 @@ module Vemu
         end
       end
 
+      serial_args = [
+        # serial.log
+        "-chardev", "socket,id=char-serial,path=#{serial_socket_path},server=on,wait=off,logfile=#{serial_log_path}",
+        "-serial", "chardev:char-serial",
+
+        # serialv.log
+        "-device", "virtio-serial-pci,id=virtio-serial0",
+        "-chardev", "socket,id=char-serial-virtio,path=#{serial_v_socket_path},server=on,wait=off,logfile=#{serial_v_log_path}",
+        # "-device", "virtio-serial-pci,id=virtio-serial0,max_ports=1",
+        # "-device", "virtio-serial-pci,id=virtio-serial0",
+        "-device", "virtconsole,bus=virtio-serial0.0,chardev=char-serial-virtio,id=console0",
+      ]
+
       other_args = [
         "-device", "virtio-rng-pci",
         "-display", "none",
@@ -160,16 +172,6 @@ module Vemu
         "-device", "qemu-xhci,id=usb-bus",
         "-parallel", "none",
 
-        # serial.log
-        "-chardev", "socket,id=char-serial,path=#{serial_socket_path},server=on,wait=off,logfile=#{serial_log_path}",
-        "-serial", "chardev:char-serial",
-
-        # serialv.log
-        "-chardev", "socket,id=char-serial-virtio,path=#{serial_v_socket_path},server=on,wait=off,logfile=#{serial_v_log_path}",
-        # "-device", "virtio-serial-pci,id=virtio-serial0,max_ports=1",
-        "-device", "virtio-serial-pci,id=virtio-serial0",
-        "-device", "virtconsole,chardev=char-serial-virtio,id=console0",
-
         # QMP
         "-chardev", "socket,id=char-qmp,path=#{qmp_socket_path},server=on,wait=off",
         "-qmp", "chardev:char-qmp",
@@ -178,7 +180,7 @@ module Vemu
         "-pidfile", qemu_pid_path
       ]
 
-      (machine_args + storage_args + cloudinit_args + network_args + guestagent_args + extra_args + other_args).map(&:to_s)
+      (machine_args + storage_args + cloudinit_args + network_args + serial_args + guestagent_args + extra_args + other_args).map(&:to_s)
     end
   end
 end
