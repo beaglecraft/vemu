@@ -7,4 +7,6 @@ chmod -x localruby.tzst
 tar -xf localruby.tzst
 chown root:root -R localruby
 
-./localruby/bin/ruby ga_init.rb
+systemctl daemon-reload
+systemctl enable vemu-guest-agent.service
+systemctl start vemu-guest-agent.service

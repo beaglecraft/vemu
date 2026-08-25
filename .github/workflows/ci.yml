@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y qemu-system-misc qemu-system-x86 qemu-user-static qemu-kvm \
-            genisoimage
+            genisoimage libguestfs-tools
 
           # On Blacksmith runners, KVM is built into the microVM kernel rather than shipped
           # as a loadable module, so `modprobe kvm` reports "Module kvm not found". /dev/kvm
@@ -30,6 +30,34 @@ jobs:
           sudo chown "$(whoami)" /dev/kvm
 
           qemu-system-x86_64 --version
+
+      - name: Cache vhost-device-vsock
+        id: cache-vhost-device-vsock
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/vhost-device-vsock
+          key: vhost-device-vsock-${{ runner.os }}-${{ runner.arch }}-0.3.0-v1
+
+      - name: Install vhost-device-vsock
+        if: steps.cache-vhost-device-vsock.outputs.cache-hit != 'true'
+        run: |
+          # The Blacksmith runner kernel is built without CONFIG_VHOST_VSOCK, so the in-kernel
+          # /dev/vhost-vsock backend that QEMU's `vhost-vsock-pci` device needs isn't available.
+          # Install the userspace rust-vmm vhost-user backend instead: QEMU's `vhost-user-vsock`
+          # device talks to this daemon over a Unix socket, so no kernel module is required.
+          cargo install vhost-device-vsock --version 0.3.0 --locked
+
+      - name: Save vhost-device-vsock cache
+        if: steps.cache-vhost-device-vsock.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cargo/bin/vhost-device-vsock
+          key: ${{ steps.cache-vhost-device-vsock.outputs.cache-primary-key }}
+
+      - name: Set up vhost-device-vsock
+        run: |
+          echo "${HOME}/.cargo/bin" >> "$GITHUB_PATH"
+          "${HOME}/.cargo/bin/vhost-device-vsock" --version
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -50,7 +78,7 @@ jobs:
           curl -fsSL -o guest-support/localruby.tzst http://xb1-p.us-east-1.linodeobjects.com/localruby/localruby.tzst
 
       - name: Cache base VM image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.vemu/base-images
           key: vemu-1
@@ -76,7 +104,21 @@ jobs:
           ln -sfn ubuntu-amd64.img "$image_path"
 
       - name: Run experiment
-        run: test/ci-qemu
+        run: |
+          # This must be running in order for qemu below to be able to boot
+          vhost-device-vsock --vm guest-cid=10015050,socket=/tmp/vhost10015050.sock,uds-path=/tmp/vm10015050.sock &
+
+          # The order of this one is not important
+          ./vendor/vsock-bridge/user-vsock.rb --bind 127.0.0.1:15050 --uds-path /tmp/vm10015050.sock >/dev/null 2>&1 &
+
+          # Create a throwaway SSH key
+          mkdir -p ~/.ssh
+          ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_vemu_temp -N "" -q
+
+          # very hacky way of "ensuring" the socket is in place.
+          sleep 1
+
+          test/ci-qemu
 
       - name: Print serial log
         run: |

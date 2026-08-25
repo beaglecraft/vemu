@@ -2,20 +2,32 @@ module Vemu
   class HostInfo
     CONFIGMAP = {
       debian:  {
-        ovmf_code_path: '/usr/share/OVMF/OVMF_CODE_4M.fd'
+        ovmf_code_path: '/usr/share/OVMF/OVMF_CODE_4M.fd',
+        ovmf_vars_path: '/usr/share/OVMF/OVMF_VARS_4M.fd'
       },
       rhel: {
-        ovmf_code_path: '/usr/share/edk2/ovmf/OVMF_CODE.fd'
+        ovmf_code_path: '/usr/share/edk2/ovmf/OVMF_CODE.fd',
+        ovmf_vars_path: '/usr/share/edk2/ovmf/OVMF_VARS.fd'
       }
     }.tap do |x|
       x[:ubuntu] = x[:debian]
     end.freeze
+
+    def ovmf_vars_path
+      CONFIGMAP.fetch(os)[:ovmf_vars_path]
+    end
 
     def ovmf_code_path
       CONFIGMAP.fetch(os)[:ovmf_code_path]
     end
 
     def qemu_system_bin(arch = nil)
+      # TODO: lol
+      if arch == 'amd64'
+        qemu11_bin = '/opt/qemu-11.1.0/bin/qemu-system-x86_64'
+        return qemu11_bin if File.file?(qemu11_bin)
+      end
+
       return '/usr/libexec/qemu-kvm' if os == :rhel
 
       mapping = {
