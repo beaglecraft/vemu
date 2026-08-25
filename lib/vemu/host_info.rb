@@ -22,6 +22,12 @@ module Vemu
     end
 
     def qemu_system_bin(arch = nil)
+      # TODO: lol
+      if arch == 'amd64'
+        qemu11_bin = '/opt/qemu-11.1.0/bin/qemu-system-x86_64'
+        return qemu11_bin if File.file?(qemu11_bin)
+      end
+
       return '/usr/libexec/qemu-kvm' if os == :rhel
 
       mapping = {

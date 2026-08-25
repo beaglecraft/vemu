@@ -13,8 +13,9 @@ module Vemu
         uefi = ',pflash0=uefi_code,pflash1=uefi_vars'
 
         machine_args += [
-          "-machine", "q35,accel=kvm#{uefi}#{mem_backend}",
+          "-machine", "q35,usb=off,accel=kvm#{uefi}#{mem_backend}",
           "-cpu", "host",
+          "-vga", "none",
 
           "-blockdev", "driver=file,filename=#{@host_info.ovmf_code_path},node-name=uefi_code,read-only=on",
           "-blockdev", "driver=file,filename=#{ovmf_vars_path},node-name=uefi_vars",
