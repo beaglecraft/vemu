@@ -9,17 +9,23 @@ module Vemu
       ]
 
       if @arch == 'amd64'
+        mem_backend = (@vsock_mode == :user ? ',memory-backend=mem0' : nil)
+        uefi = ',pflash0=uefi_code,pflash1=uefi_vars'
+
         machine_args += [
-          "-machine", "q35,accel=kvm,pflash0=uefi_code#{@vsock_mode == :user ? ',memory-backend=mem0' : nil}",
+          "-machine", "q35,accel=kvm#{uefi}#{mem_backend}",
           "-cpu", "host",
 
           "-blockdev", "driver=file,filename=#{@host_info.ovmf_code_path},node-name=uefi_code,read-only=on",
+          "-blockdev", "driver=file,filename=#{ovmf_vars_path},node-name=uefi_vars",
 
           # "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd",
           # "-boot", "order=c,splash-time=0,menu=on",
           "-boot", "menu=on",
         ]
       elsif @arch == 'arm64'
+        # TODO: arm64 hasn't been tested quite well, no expectations that it actually works.
+        #
         # cp /usr/share/AAVMF/AAVMF_VARS.fd /home/masterapp/.vemu/vms/early/kvm_vars.fd
 
         raise "must copy the /usr/share/AAVMF/AAVMF_VARS.fd file"

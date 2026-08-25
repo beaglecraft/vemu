@@ -61,6 +61,7 @@ module Vemu
 
     def cloud_init_img_path = File.join(@vm_path, 'cidata.iso')
     def diffdisk_path = File.join(@vm_path, 'diffdisk')
+    def ovmf_vars_path = File.join(@vm_path, 'ovmf_vars.fd')
     def serial_socket_path = File.join(@vm_path, 'serial.sock')
     def serial_v_socket_path = File.join(@vm_path, 'serialv.sock')
     def serial_log_path = File.join(@vm_path, 'serial.log')

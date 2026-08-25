@@ -9,25 +9,6 @@ module Vemu
       })
     end
 
-    def vm_start
-      prepare_vm_files
-
-      full_command = "#{qemu_system_bin} \\\n"
-
-      qemu_cmd_arguments.each_slice(2) do |lines|
-        full_command += "\t#{lines.join(' ')} \\\n"
-      end
-      full_command += ";"
-
-      File.write("/tmp/run_image.sh", <<~BASH)
-        #!/usr/bin/env bash
-        set -eux
-
-        #{full_command}
-
-      BASH
-    end
-
     def vm_start_attached
       fork do
         STDOUT.close
@@ -35,7 +16,7 @@ module Vemu
         STDIN.close
 
         vm_start_exec
-        
+
         exit!(1)
       end
     end

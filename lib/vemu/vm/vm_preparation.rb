@@ -1,5 +1,24 @@
 module Vemu
   module VmPreparation
+    def prepare_vm_files
+      @cloud_init_user_data_hooks = []
+      @cloud_init_network_config_hooks = []
+
+      FileUtils.mkdir_p(@vm_path)
+
+      # XXX: always recreate the cloud init image. It has caused a few headaches already.
+      # cloud_init_img_create! unless cloud_init_img_present?
+      cloud_init_img_create!
+
+      diffdisk_create! unless diffdisk_present?
+
+      setup_ovmf_files!
+    end
+
+    def setup_ovmf_files!
+      FileUtils.copy_file(@host_info.ovmf_vars_path, ovmf_vars_path)
+    end
+
     def cloud_init_img_create!
       if @guestagent_enabled
         guest_support_path = File.join(Vemu.root, 'guest-support')
@@ -12,6 +31,8 @@ module Vemu
         #   [  OK  ] Started systemd-networkd.service - Network Configuration.
         #   [  OK  ] Reached target network.target - Network.
         #            Starting systemd-networkd-wait-onl…ait for Network to be Configured...
+        #
+        # TODO: offline mode isn't really working.
         if @offline_mode
           @cloud_init_network_config_hooks << proc do |conf|
             conf[:ethernets] = {}
@@ -88,6 +109,7 @@ module Vemu
 
       unlink_paths << cloud_init_img_path if cloud_init_img_present?
       unlink_paths << diffdisk_path if diffdisk_present?
+      unlink_paths << ovmf_vars_path if File.exist?(ovmf_vars_path)
 
       FileUtils.rm_f(unlink_paths) unless unlink_paths.empty?
     end
@@ -101,19 +123,6 @@ module Vemu
       unless File.file?(diffdisk_path)
         raise "Error: expected diffdisk of size '#{@disk}' to exist at #{diffdisk_path}"
       end
-    end
-
-    def prepare_vm_files
-      @cloud_init_user_data_hooks = []
-      @cloud_init_network_config_hooks = []
-
-      FileUtils.mkdir_p(@vm_path)
-
-      # XXX: always recreate the cloud init image. It has caused a few headaches already.
-      # cloud_init_img_create! unless cloud_init_img_present?
-      cloud_init_img_create!
-
-      diffdisk_create! unless diffdisk_present?
     end
   end
 end
